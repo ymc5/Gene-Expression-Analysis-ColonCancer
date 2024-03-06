@@ -1,0 +1,155 @@
+---
+title: "YoungminChoi-TTestHW-02-a-Code"
+author: "Youngmin Choi"
+output: 
+  html_document:
+      df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Objective/Goal
+- To compare 20 colon cancer patients that relapsed with 20 patients that did not. 
+- To analyze which genes are differentially changed between two groups. 
+- This will help to understand affecting factors for such relapse. 
+
+## Analysis Steps 
+
+### Step 0 - Check Clinical and Molecular Data 
+- Clinical data ("CRC_PILOT_clinical_data_HIDS.tsv")
+    - 40 rows confirmed. (20 relapse, 20 non-relapse confirmed.)
+    - Rows are patient (subject) ID & columns are attributes. 
+- Molecular data (Gene data, "CRC_PILOT_withGeneAnno.tsv")
+    - Total 80 rows (40 tumor samples, 40 normal samples)
+    - Rows are sample ID & columns are gene annotations.  
+
+
+### Step 1 - Read in Data
+```{r}
+clinical_data <- read.table(file = "input/CRC_PILOT_clinical_data_HIDS.tsv",
+                      sep="\t",
+                      row.names = 1,
+                      header = T, 
+                      stringsAsFactors = F)
+molecular_data <- read.table(file = "input/CRC_PILOT_withGeneAnno.tsv",
+                      sep="\t",
+                      row.names = 1,
+                      header = T, 
+                      stringsAsFactors = F)
+head(clinical_data[,c(29:32)])
+head(molecular_data)
+
+molecular_data_t <- as.data.frame(t(molecular_data)) # Transposed the data so that the gene annotations are row and sample IDs are columns. 
+
+knitr::kable(table(clinical_data$RECURRENCE_ANY))
+```
+
+### Step 2 - Clean/Filter Data
+```{r}
+dim(clinical_data)
+
+library(dplyr)
+tumor_samples<-molecular_data_t %>% select(contains("Tumor")) # Filtered only tumor samples from molecular data (transposed). 40 samples confirmed! 
+
+# Change tumor_samples column name so that it is identical to clinical_data ID. 
+column_name<- colnames(tumor_samples)
+column_name
+split_names <- strsplit(column_name, "_")
+new_name <- sapply(split_names, function(x) x[2])
+colnames(tumor_samples) <- new_name
+```
+
+
+### Step 3 - Identify the Groups to be Compared
+```{r}
+# Baseline group (no-relapse group) row numbers
+baseline_group <- which(clinical_data$RECURRENCE_ANY == "NO") # 20 samples
+head(baseline_group)
+# Baseline group data from clinical_data. 
+clin_baseline <- clinical_data[baseline_group,]
+baseline_id <- rownames(clin_baseline) # baseline sample id 
+
+# Comparison group (relapse group) row numbers
+comparison_group <- which(clinical_data$RECURRENCE_ANY == "YES") # 20 samples
+head(comparison_group)
+# Baseline group data from clinical_data. 
+clin_comparison <- clinical_data[comparison_group,]
+comparison_id <- rownames(clin_comparison)
+
+# Molecular data subset 
+# Baseline group molecular data
+molecular_baseline <- tumor_samples[,baseline_id] # 20 variables, 17881 rows
+# Comparison group molecular data
+molecular_comparison <- tumor_samples[,comparison_id] # 20 variables, 17881 rows
+
+
+```
+
+### Step 4 - Sanity Check
+```{r}
+# See if sample IDs match in clinical data and molecular data
+rownames(clin_baseline) == colnames(molecular_baseline)
+rownames(clin_comparison) == colnames(molecular_comparison)
+
+# Check by .tsv file comparison. 
+write.table(rownames(clin_baseline), file="output/YoungminChoi_ClinBaseIDs.tsv", sep="\t", quote=F)
+write.table(rownames(clin_comparison), file="output/YoungminChoi_ClinCompIDs.tsv", sep="\t", quote=F)
+
+write.table(colnames(molecular_baseline), file="output/YoungminChoi_GeneExpBaseIDs.tsv", sep="\t", quote=F)
+write.table(colnames(molecular_comparison), file="output/YoungminChoi_GeneExpCompIDs.tsv", sep="\t", quote=F)
+
+write.table(rownames(molecular_baseline), file="output/YoungminChoi_FeatureIDs.tsv")
+```
+
+### Step 5 - Prep Data for T-test
+```{r}
+knitr::kable(head(molecular_baseline[1:5,1:4]))
+knitr::kable(head(molecular_comparison[1:5,1:4]))
+
+```
+
+### Step 6 - Call Function for T-test 
+```{r}
+source("fnTTest.R")
+
+results1 = fnTTest(baseGroup = molecular_baseline, 
+                   compGroup = molecular_comparison, 
+                   testName = "TTest_HW04", 
+                   baseGroupName = "No_relapse",
+                   compGroupName =  "Relapsed",
+                   folderName = "output")
+
+```
+
+### Step 6-II - Further Result Analysis
+
+```{r}
+ttestResults <- read.csv(file = "output/TTest_HW04_Relapsed_(Comp).vs._No_relapse_(Base).TTest.csv")
+
+ttestResultsSorted <- dplyr::arrange(ttestResults, Pvalue)
+
+
+whichSig <- which(ttestResultsSorted$Pvalue <= 0.05) 
+
+ttestResultsSig <- ttestResultsSorted[whichSig, ] #719 rows 
+
+### Export short listed results
+write.table(x = ttestResultsSig, 
+            file = "output/YoungminChoi-TTestHW-04-Output.csv", 
+            quote = F, sep = "\t", row.names=FALSE)
+
+gene_names <- ttestResultsSig[,'Feature']
+gene_top20<- gene_names[1:20]
+gene_top20
+
+
+### Export list of gene names
+write.table(x = gene_top20, 
+            file = "output/YoungminChoi-TTestHW-05-Top20Genes.tsv", 
+            quote = F, sep = "\t")
+
+
+
+```
